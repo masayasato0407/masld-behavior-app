@@ -33,14 +33,14 @@ BiocManager::install(c("Rgraphviz", "graph"))
 ## Run locally
 
 ```r
-shiny::runApp("masld_app")
+shiny::runApp("masld_behavior_app")
 ```
 
 ## Deploy to shinyapps.io
 
 ```r
 library(rsconnect)
-rsconnect::deployApp("masld_app")
+rsconnect::deployApp("masld_behavior_app")
 ```
 
 ## Data source
