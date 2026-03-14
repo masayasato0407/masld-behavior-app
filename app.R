@@ -256,55 +256,43 @@ ui <- page_navbar(
           )
         ),
 
-        tags$div(
-          card(
-            fill = FALSE,
-            card_header(
-              tags$h5(icon("chart-line"),
-                      " Simulation Result", class = "mb-0"),
-              class = "bg-success text-white"
-            ),
-            card_body(
-              class = "text-center",
-              tags$div(
-                class = "p-3 rounded mb-3",
-                style = "background: #FDEDEC;",
-                tags$p("Current", class = "text-muted mb-1 small fw-semibold"),
-                tags$h2(textOutput("sim_current_pct"),
-                        class = "text-danger mb-0",
-                        style = "font-size: 2.5rem; font-weight: 700;")
-              ),
-              tags$div(icon("arrow-down", class = "text-success fa-2x"),
-                       class = "mb-3"),
-              tags$div(
-                class = "p-3 rounded mb-3",
-                style = "background: #E8F8F5;",
-                tags$p("After Improvement",
-                       class = "text-muted mb-1 small fw-semibold"),
-                tags$h2(textOutput("sim_improved_pct"),
-                        class = "text-success mb-0",
-                        style = "font-size: 2.5rem; font-weight: 700;")
-              ),
-              tags$div(
-                class = "p-3 rounded",
-                style = "background: #EBF5FB;",
-                tags$p("Risk Reduction",
-                       class = "text-muted mb-1 small fw-semibold"),
-                tags$h2(textOutput("sim_total_effect"),
-                        class = "text-info mb-0",
-                        style = "font-size: 2.5rem; font-weight: 700;")
-              )
-            )
+        # [CHANGE] Effect Breakdown card removed; Simulation Result card only
+        card(
+          fill = FALSE,
+          card_header(
+            tags$h5(icon("chart-line"),
+                    " Simulation Result", class = "mb-0"),
+            class = "bg-success text-white"
           ),
-
-          card(
-            fill = FALSE,
-            card_header(
-              tags$h6(icon("list"), " Effect Breakdown", class = "mb-0"),
-              class = "bg-light py-2"
+          card_body(
+            class = "text-center",
+            tags$div(
+              class = "p-3 rounded mb-3",
+              style = "background: #FDEDEC;",
+              tags$p("Current", class = "text-muted mb-1 small fw-semibold"),
+              tags$h2(textOutput("sim_current_pct"),
+                      class = "text-danger mb-0",
+                      style = "font-size: 2.5rem; font-weight: 700;")
             ),
-            card_body(
-              uiOutput("effect_breakdown")
+            tags$div(icon("arrow-down", class = "text-success fa-2x"),
+                     class = "mb-3"),
+            tags$div(
+              class = "p-3 rounded mb-3",
+              style = "background: #E8F8F5;",
+              tags$p("After Improvement",
+                     class = "text-muted mb-1 small fw-semibold"),
+              tags$h2(textOutput("sim_improved_pct"),
+                      class = "text-success mb-0",
+                      style = "font-size: 2.5rem; font-weight: 700;")
+            ),
+            tags$div(
+              class = "p-3 rounded",
+              style = "background: #EBF5FB;",
+              tags$p("Risk Reduction",
+                     class = "text-muted mb-1 small fw-semibold"),
+              tags$h2(textOutput("sim_total_effect"),
+                      class = "text-info mb-0",
+                      style = "font-size: 2.5rem; font-weight: 700;")
             )
           )
         )
@@ -340,12 +328,6 @@ ui <- page_navbar(
           tags$h6("Questionnaire source:"),
           tags$p("Questions are based on the Japanese Specific Health Checkup
                   (Tokutei Kenshin) lifestyle questionnaire.",
-                 class = "text-muted small"),
-          tags$hr(),
-          tags$p(tags$strong("Note:"), "When a behavior change shows no meaningful
-                  risk reduction in the model, it is displayed as
-                  'No meaningful effect'. This reflects the conservative
-                  interpretation of observational data.",
                  class = "text-muted small")
         )
       ),
@@ -548,17 +530,17 @@ server <- function(input, output, session) {
     )
   })
 
-  # --- Post-intervention probability (Pattern A + sanitization) ---
+  # --- Post-intervention probability ---
+  # [CHANGE 1] Individual effects calculation removed (Effect Breakdown deleted)
+  # [CHANGE 2] SB paradox fix: if adding Skipping_breakfast worsens risk,
+  #            silently use the value without SB instead
   improved_result <- reactive({
     ev_raw <- confirmed_evidence()
     p_current <- confirmed_prob()
     ub <- confirmed_unhealthy_display()
 
     if (is.null(ev_raw) || is.null(p_current) || length(ub) == 0) {
-      return(list(
-        p_improved = p_current,
-        individual = setNames(rep(0, length(score_vars)), score_vars)
-      ))
+      return(list(p_improved = p_current))
     }
 
     ev_current <- sanitize_evidence(ev_raw)
@@ -571,27 +553,38 @@ server <- function(input, output, session) {
       }
     }
 
-    individual_effects <- setNames(rep(0, length(score_vars)), score_vars)
-    for (beh in improved_list) {
-      ev_single <- ev_current
-      ev_single[[beh]] <- "0"
-      p_single <- exact_query(grain_bn, ev_single)
-      eff <- p_current - p_single
-      individual_effects[beh] <- max(eff, 0)
-    }
-
     if (length(improved_list) > 0) {
+      # Compute p_improved with all selected behaviors
       ev_improved <- ev_current
       for (beh in improved_list) {
         ev_improved[[beh]] <- "0"
       }
       p_improved_raw <- exact_query(grain_bn, ev_improved)
+
+      # [CHANGE 2] SB paradox fix:
+      # If Skipping_breakfast is selected, compare with the value excluding SB.
+      # If adding SB makes risk higher, silently use the without-SB value.
+      if ("Skipping_breakfast" %in% improved_list) {
+        list_without_sb <- setdiff(improved_list, "Skipping_breakfast")
+        if (length(list_without_sb) > 0) {
+          ev_without_sb <- ev_current
+          for (beh in list_without_sb) {
+            ev_without_sb[[beh]] <- "0"
+          }
+          p_without_sb <- exact_query(grain_bn, ev_without_sb)
+        } else {
+          p_without_sb <- p_current
+        }
+        # Use whichever is lower (better for the user)
+        p_improved_raw <- min(p_improved_raw, p_without_sb)
+      }
+
       p_improved <- min(p_improved_raw, p_current)
     } else {
       p_improved <- p_current
     }
 
-    list(p_improved = p_improved, individual = individual_effects)
+    list(p_improved = p_improved)
   })
 
   output$sim_current_pct <- renderText({
@@ -612,65 +605,6 @@ server <- function(input, output, session) {
     if (is.null(p_current) || is.null(res$p_improved)) return("")
     eff <- (p_current - res$p_improved) * 100
     if (eff > 0) paste0("-", round(eff, 1), " pp") else "No change"
-  })
-
-  # --- Effect breakdown ---
-  output$effect_breakdown <- renderUI({
-    ub <- confirmed_unhealthy_display()
-    effects <- improved_result()$individual
-
-    improved_list <- c()
-    for (beh in ub) {
-      val <- input[[paste0("imp_", beh)]]
-      if (!is.null(val) && val == TRUE) {
-        improved_list <- c(improved_list, beh)
-      }
-    }
-
-    if (length(improved_list) == 0) {
-      return(tags$div(
-        class = "text-center py-3 text-muted",
-        icon("info-circle", class = "me-1"),
-        "Toggle at least one behavior to see the effect."
-      ))
-    }
-
-    max_eff <- max(effects * 100, 3)
-
-    tagList(lapply(improved_list, function(beh) {
-      eff_pp <- effects[beh] * 100
-
-      if (eff_pp <= 0) {
-        tags$div(
-          class = "mb-2 p-2 rounded d-flex justify-content-between align-items-center",
-          style = "background: #FFF3CD; border: 1px solid #FFEAA7;",
-          tags$span(icon("exclamation-triangle", class = "text-warning me-1"),
-                    behavior_labels[beh]),
-          tags$span(class = "badge bg-warning text-dark",
-                    "No meaningful effect")
-        )
-      } else {
-        bar_width <- min(eff_pp / max_eff * 100, 100)
-        tags$div(
-          class = "mb-2 p-2 rounded",
-          style = "background: #E8F8F5; border: 1px solid #A3E4D7;",
-          tags$div(
-            class = "d-flex justify-content-between align-items-center mb-1",
-            tags$span(icon("check-circle", class = "text-success me-1"),
-                      behavior_labels[beh]),
-            tags$span(class = "badge bg-success",
-                      paste0("-", round(eff_pp, 1), " pp"))
-          ),
-          tags$div(
-            class = "progress", style = "height: 8px;",
-            tags$div(
-              class = "progress-bar bg-success", role = "progressbar",
-              style = paste0("width: ", round(bar_width), "%;")
-            )
-          )
-        )
-      }
-    }))
   })
 
   # --- DAG plot ---
