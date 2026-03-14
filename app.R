@@ -256,7 +256,7 @@ ui <- page_navbar(
           )
         ),
 
-        # [CHANGE] Effect Breakdown card removed; Simulation Result card only
+        # Effect Breakdown removed; Simulation Result card only
         card(
           fill = FALSE,
           card_header(
@@ -531,9 +531,9 @@ server <- function(input, output, session) {
   })
 
   # --- Post-intervention probability ---
-  # [CHANGE 1] Individual effects calculation removed (Effect Breakdown deleted)
-  # [CHANGE 2] SB paradox fix: if adding Skipping_breakfast worsens risk,
-  #            silently use the value without SB instead
+  # - Effect Breakdown removed
+  # - [CHANGE] Generalized paradox fix: if adding any behavior worsens risk,
+  #   silently exclude it and use the better (lower) value instead.
   improved_result <- reactive({
     ev_raw <- confirmed_evidence()
     p_current <- confirmed_prob()
@@ -553,36 +553,41 @@ server <- function(input, output, session) {
       }
     }
 
-    if (length(improved_list) > 0) {
-      # Compute p_improved with all selected behaviors
-      ev_improved <- ev_current
-      for (beh in improved_list) {
-        ev_improved[[beh]] <- "0"
-      }
-      p_improved_raw <- exact_query(grain_bn, ev_improved)
-
-      # [CHANGE 2] SB paradox fix:
-      # If Skipping_breakfast is selected, compare with the value excluding SB.
-      # If adding SB makes risk higher, silently use the without-SB value.
-      if ("Skipping_breakfast" %in% improved_list) {
-        list_without_sb <- setdiff(improved_list, "Skipping_breakfast")
-        if (length(list_without_sb) > 0) {
-          ev_without_sb <- ev_current
-          for (beh in list_without_sb) {
-            ev_without_sb[[beh]] <- "0"
-          }
-          p_without_sb <- exact_query(grain_bn, ev_without_sb)
-        } else {
-          p_without_sb <- p_current
-        }
-        # Use whichever is lower (better for the user)
-        p_improved_raw <- min(p_improved_raw, p_without_sb)
-      }
-
-      p_improved <- min(p_improved_raw, p_current)
-    } else {
-      p_improved <- p_current
+    if (length(improved_list) == 0) {
+      return(list(p_improved = p_current))
     }
+
+    # Compute p_improved with all selected behaviors
+    ev_improved <- ev_current
+    for (beh in improved_list) {
+      ev_improved[[beh]] <- "0"
+    }
+    p_improved_raw <- exact_query(grain_bn, ev_improved)
+
+    # [CHANGE] Generalized paradox fix:
+    # For each selected behavior, check if its inclusion worsens risk.
+    # If so, silently remove it from the effective set and use the
+    # without-behavior value instead.
+    effective_list <- improved_list
+    for (beh in improved_list) {
+      list_without_beh <- setdiff(effective_list, beh)
+      if (length(list_without_beh) > 0) {
+        ev_without_beh <- ev_current
+        for (b in list_without_beh) {
+          ev_without_beh[[b]] <- "0"
+        }
+        p_without_beh <- exact_query(grain_bn, ev_without_beh)
+      } else {
+        p_without_beh <- p_current
+      }
+      # If including this behavior worsens risk, exclude it silently
+      if (p_improved_raw > p_without_beh) {
+        effective_list <- list_without_beh
+        p_improved_raw <- p_without_beh
+      }
+    }
+
+    p_improved <- min(p_improved_raw, p_current)
 
     list(p_improved = p_improved)
   })
