@@ -1,0 +1,28 @@
+# Data files (NEVER commit data-derived content)
+*.RData
+*.rds
+*.csv
+*.tsv
+*.xlsx
+*.parquet
+*.pkl
+*.h5
+data/
+raw_data/
+
+# Credentials
+.Renviron
+.env
+
+# R / RStudio
+.Rhistory
+.Rproj.user
+rsconnect/
+*.Rproj
+
+# Working directories
+archives/
+
+# OS
+.DS_Store
+Thumbs.db
