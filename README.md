@@ -43,15 +43,13 @@ install.packages(c("shiny", "bslib", "bnlearn", "gRain", "dplyr"))
 > **Note:** The trained Bayesian network model file (`bn_masld_model.RData`) 
 > is not included in this repository due to data use agreement restrictions 
 > with JMDC. The model architecture, training procedure, and validation 
-> results are described in detail in the forthcoming publication. Users who 
-> wish to interact with the trained model can use the live web application 
-> linked above.
+> results are described in detail in the forthcoming publication. 
 
 ## Run locally
 
-This application requires the trained Bayesian network model file, which 
-is not distributed with this repository. To run locally, please refer to 
-the live web application or contact the authors.
+This application requires the trained Bayesian network model file, 
+which is not distributed with this repository. Please contact 
+the authors for inquiries about model access.
 
 ## Data source
 
