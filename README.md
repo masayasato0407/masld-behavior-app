@@ -4,7 +4,7 @@ A Shiny web application that uses a Bayesian network with the do-operator to
 estimate how lifestyle behavior changes could affect an individual's MASLD
 (Metabolic dysfunction-Associated Steatotic Liver Disease) probability.
 
-**Live app:** https://liver-prediction.shinyapps.io/masld_behavior_app/
+**Live app:** https://masayasato-masld-behavior-app.share.connect.posit.cloud/
 
 ## Overview
 
