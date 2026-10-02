@@ -26,8 +26,9 @@
 #   at least one of the five cardiometabolic risk factors (CMRFs), and
 #   MASLD-compatible alcohol consumption, as described in the manuscript.
 #
-# Packages: bnlearn, gRain (pulls gRbase), dplyr;
-#           pROC for optional validation.
+# Packages:
+#   bnlearn, gRain (pulls gRbase), dplyr
+#   pROC for optional validation
 # =============================================================================
 
 
@@ -37,7 +38,8 @@ library(dplyr)
 
 
 # -----------------------------------------------------------------------------
-# 1. Input data (NOT included; supply under your own JMDC license)
+# 1. Input data
+#    NOT included; supply under your own JMDC license.
 # -----------------------------------------------------------------------------
 #
 # `dat`: one row per individual, all columns coded as character/factor:
@@ -60,11 +62,17 @@ library(dplyr)
 #
 # Replace the next line with your own data-loading step.
 #
-# dat <- readRDS("path/to/jmdc_derived_dataset.rds")   # <-- supply your data
+# dat <- readRDS("path/to/jmdc_derived_dataset.rds")
 
 
-stopifnot(exists("dat"))
+stopifnot(
+  exists("dat")
+)
 
+
+# -----------------------------------------------------------------------------
+# 1a. Define model variables
+# -----------------------------------------------------------------------------
 
 demog <- c(
   "Age",
@@ -92,7 +100,10 @@ all_nodes <- c(
 )
 
 
-# Standardize factor levels
+# -----------------------------------------------------------------------------
+# 1b. Standardize factor levels
+# -----------------------------------------------------------------------------
+
 dat <- dat %>%
   mutate(
 
@@ -148,7 +159,8 @@ dat <- dat[
 # -----------------------------------------------------------------------------
 # 2. Fixed a priori three-layer structure
 #
-#    Layer 1 (roots): Age, Sex
+#    Layer 1 (roots):
+#      Age, Sex
 #
 #    Layer 2:
 #      Six lifestyle behaviors
@@ -158,7 +170,6 @@ dat <- dat[
 #      MASLD_outcome
 #      Age, Sex, each behavior -> MASLD_outcome
 # -----------------------------------------------------------------------------
-
 
 base_arcs <- rbind(
 
@@ -185,28 +196,49 @@ base_arcs <- rbind(
 # -----------------------------------------------------------------------------
 # 3. Data-driven inter-behavior edges
 #
-#    (a) Cramer's V screening conditional on Age x Sex strata
-#        Candidate threshold: maximum V >= 0.20
+#    (a) Cramer's V screening conditional on Age x Sex strata.
+#        Candidate threshold:
+#          maximum V >= 0.20
 #
-#    (b) Edge directions determined by BIC score-based search, restricted to
-#        the screened candidate pairs, while the three-layer structure is
-#        fixed by whitelisting.
+#    (b) Edge directions determined by BIC score-based search, restricted
+#        to screened candidate behavior pairs, while the a priori
+#        three-layer structure is fixed by whitelisting.
 #
-#        This corresponds to the score-based direction-learning step applied
-#        to the screened inter-behavior candidates.
+#    The final manuscript model contains the following inter-behavior edges:
+#
+#      Regular_exercise
+#          -> Daily_physical_activity
+#
+#      Daily_physical_activity
+#          -> Walking_speed
+#
+#    A verification step below stops execution if the learned
+#    inter-behavior structure differs from the final manuscript model.
 # -----------------------------------------------------------------------------
 
 
-cramers_v <- function(x, y) {
+# -----------------------------------------------------------------------------
+# 3a. Cramer's V function
+# -----------------------------------------------------------------------------
+
+cramers_v <- function(
+  x,
+  y
+) {
 
   tab <- table(
     x,
     y
   )
 
+
   if (any(dim(tab) < 2)) {
-    return(0)
+
+    return(
+      0
+    )
   }
+
 
   chi <- suppressWarnings(
     chisq.test(
@@ -214,6 +246,7 @@ cramers_v <- function(x, y) {
       correct = FALSE
     )$statistic
   )
+
 
   as.numeric(
     sqrt(
@@ -224,7 +257,14 @@ cramers_v <- function(x, y) {
 }
 
 
-pair_key <- function(a, b) {
+# -----------------------------------------------------------------------------
+# 3b. Helper for unordered behavior-pair identifiers
+# -----------------------------------------------------------------------------
+
+pair_key <- function(
+  a,
+  b
+) {
 
   paste(
     sort(
@@ -238,18 +278,25 @@ pair_key <- function(a, b) {
 }
 
 
+# -----------------------------------------------------------------------------
+# 3c. Candidate-pair screening
+# -----------------------------------------------------------------------------
+
 V_THRESHOLD <- 0.20
 
 
 strata <- expand.grid(
+
   Age = c(
     "young",
     "old"
   ),
+
   Sex = c(
     "male",
     "female"
   ),
+
   stringsAsFactors = FALSE
 )
 
@@ -262,12 +309,15 @@ pairs_bb <- t(
 )
 
 
-cand_keys <- character(0)
+cand_keys <- character(
+  0
+)
 
 
 for (i in seq_len(nrow(pairs_bb))) {
 
   b1 <- pairs_bb[i, 1]
+
   b2 <- pairs_bb[i, 2]
 
   maxv <- 0
@@ -307,9 +357,25 @@ for (i in seq_len(nrow(pairs_bb))) {
 }
 
 
+cand_keys <- unique(
+  cand_keys
+)
+
+
+# -----------------------------------------------------------------------------
+# 3d. Direction learning for screened candidate pairs
+# -----------------------------------------------------------------------------
+
 inter_arcs <- data.frame(
-  from = character(0),
-  to = character(0),
+
+  from = character(
+    0
+  ),
+
+  to = character(
+    0
+  ),
+
   stringsAsFactors = FALSE
 )
 
@@ -317,8 +383,11 @@ inter_arcs <- data.frame(
 if (length(cand_keys) > 0) {
 
   ordered_bb <- expand.grid(
+
     from = behaviors,
+
     to = behaviors,
+
     stringsAsFactors = FALSE
   )
 
@@ -335,6 +404,8 @@ if (length(cand_keys) > 0) {
   )
 
 
+  # Block all behavior-to-behavior arcs that were not selected
+  # by Cramer's V screening.
   blacklist_bb <- as.matrix(
     ordered_bb[
       !(ordered_bb$k %in% cand_keys),
@@ -346,6 +417,7 @@ if (length(cand_keys) > 0) {
   )
 
 
+  # Keep the a priori demographic / behavior / outcome structure fixed.
   whitelist_fixed <- as.matrix(
     base_arcs[
       ,
@@ -398,15 +470,126 @@ if (length(cand_keys) > 0) {
 
 
 # -----------------------------------------------------------------------------
-# 4. Assemble DAG and estimate CPTs
+# 3e. Verify final inter-behavior structure
 #
-#    Conditional probability tables are estimated by Bayesian parameter
+# Expected final manuscript model:
+#
+#   Regular_exercise
+#       -> Daily_physical_activity
+#
+#   Daily_physical_activity
+#       -> Walking_speed
+# -----------------------------------------------------------------------------
+
+expected_inter_arcs <- data.frame(
+
+  from = c(
+    "Regular_exercise",
+    "Daily_physical_activity"
+  ),
+
+  to = c(
+    "Daily_physical_activity",
+    "Walking_speed"
+  ),
+
+  stringsAsFactors = FALSE
+)
+
+
+normalize_arcs <- function(
+  x
+) {
+
+  if (nrow(x) == 0) {
+
+    return(
+      data.frame(
+        from = character(0),
+        to = character(0),
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+
+
+  x <- x[
+    order(
+      x$from,
+      x$to
+    ),
+    c(
+      "from",
+      "to"
+    )
+  ]
+
+
+  rownames(x) <- NULL
+
+
+  x
+}
+
+
+if (
+  !identical(
+    normalize_arcs(
+      inter_arcs
+    ),
+    normalize_arcs(
+      expected_inter_arcs
+    )
+  )
+) {
+
+  cat(
+    "\nLearned inter-behavior edges:\n"
+  )
+
+  print(
+    inter_arcs
+  )
+
+
+  cat(
+    "\nExpected inter-behavior edges:\n"
+  )
+
+  print(
+    expected_inter_arcs
+  )
+
+
+  stop(
+    paste0(
+      "Learned inter-behavior edges do not match ",
+      "the final manuscript model."
+    )
+  )
+}
+
+
+cat(
+  "\nInter-behavior edge verification passed.\n"
+)
+
+
+print(
+  inter_arcs
+)
+
+
+# -----------------------------------------------------------------------------
+# 4. Assemble final DAG and estimate conditional probability tables
+#
+#    Conditional probability tables are estimated using Bayesian parameter
 #    estimation with imaginary sample size (iss) = 10.
 # -----------------------------------------------------------------------------
 
-
 arcs_all <- unique(
   rbind(
+
     base_arcs[
       ,
       c(
@@ -414,6 +597,7 @@ arcs_all <- unique(
         "to"
       )
     ],
+
     inter_arcs
   )
 )
@@ -424,13 +608,17 @@ dag <- empty.graph(
 )
 
 
-arcs(dag) <- as.matrix(
+arcs(
+  dag
+) <- as.matrix(
   arcs_all
 )
 
 
 stopifnot(
-  acyclic(dag)
+  acyclic(
+    dag
+  )
 )
 
 
@@ -446,10 +634,10 @@ bn_fit <- bn.fit(
 # 5. do-operator helper
 #
 #    Graph mutilation followed by exact inference via the junction tree.
-#    This mirrors the hypothetical behavioral modification query used by
-#    app.R.
+#
+#    This mirrors the model-based hypothetical behavioral modification query
+#    used by app.R.
 # -----------------------------------------------------------------------------
-
 
 query_do <- function(
   fit,
@@ -465,15 +653,21 @@ query_do <- function(
 
 
   g <- compile(
-    as.grain(mut)
+    as.grain(
+      mut
+    )
   )
 
 
   g <- setEvidence(
     g,
-    nodes = names(evidence_list),
+    nodes = names(
+      evidence_list
+    ),
     states = as.character(
-      unlist(evidence_list)
+      unlist(
+        evidence_list
+      )
     )
   )
 
@@ -481,20 +675,29 @@ query_do <- function(
   querygrain(
     g,
     nodes = outcome_node
-  )[[outcome_node]][outcome_state]
+  )[
+    [
+      outcome_node
+    ]
+  ][
+    outcome_state
+  ]
 }
 
 
 # -----------------------------------------------------------------------------
 # 6. Optional optimism-corrected bootstrap validation
 #
-#    AUC and Brier score
-#    B = 200 by default
+#    Outputs:
+#      AUC
+#      Brier score
+#
+#    Default:
+#      B = 200 bootstrap samples
 #
 #    This routine may be computationally intensive for a large dataset.
 #    Prediction uses likelihood weighting (method = "bayes-lw").
 # -----------------------------------------------------------------------------
-
 
 validate_bn <- function(
   dat,
@@ -504,10 +707,12 @@ validate_bn <- function(
   seed = 1
 ) {
 
-  if (!requireNamespace(
-    "pROC",
-    quietly = TRUE
-  )) {
+  if (
+    !requireNamespace(
+      "pROC",
+      quietly = TRUE
+    )
+  ) {
 
     stop(
       "Package 'pROC' is required for validation."
@@ -515,7 +720,9 @@ validate_bn <- function(
   }
 
 
-  set.seed(seed)
+  set.seed(
+    seed
+  )
 
 
   perf <- function(
@@ -541,11 +748,13 @@ validate_bn <- function(
 
 
     y <- as.integer(
-      d$MASLD_outcome == "MASLD"
+      d$MASLD_outcome ==
+        "MASLD"
     )
 
 
     c(
+
       auc = as.numeric(
         pROC::auc(
           y,
@@ -555,7 +764,10 @@ validate_bn <- function(
       ),
 
       brier = mean(
-        (p - y)^2
+        (
+          p -
+            y
+        )^2
       )
     )
   }
@@ -569,24 +781,31 @@ validate_bn <- function(
   )
 
 
+  apparent_sample <- sample(
+    nrow(dat),
+    min(
+      n_eval,
+      nrow(dat)
+    )
+  )
+
+
   apparent <- perf(
     fit_app,
     dat[
-      sample(
-        nrow(dat),
-        min(
-          n_eval,
-          nrow(dat)
-        )
-      ),
+      apparent_sample,
     ]
   )
 
 
   optimism <- matrix(
+
     0,
+
     B,
+
     2,
+
     dimnames = list(
       NULL,
       c(
@@ -615,31 +834,39 @@ validate_bn <- function(
     )
 
 
+    boot_eval_index <- sample(
+      length(bs),
+      min(
+        n_eval,
+        length(bs)
+      )
+    )
+
+
     boot_eval <- dat[
       bs,
     ][
-      sample(
-        length(bs),
-        min(
-          n_eval,
-          length(bs)
-        )
-      ),
+      boot_eval_index,
     ]
+
+
+    orig_eval_index <- sample(
+      nrow(dat),
+      min(
+        n_eval,
+        nrow(dat)
+      )
+    )
 
 
     orig_eval <- dat[
-      sample(
-        nrow(dat),
-        min(
-          n_eval,
-          nrow(dat)
-        )
-      ),
+      orig_eval_index,
     ]
 
 
-    optimism[b, ] <-
+    optimism[
+      b,
+    ] <-
       perf(
         fit_b,
         boot_eval
@@ -665,18 +892,22 @@ validate_bn <- function(
 #   dag
 # )
 #
-# print(metrics)
+# print(
+#   metrics
+# )
 
 
 # -----------------------------------------------------------------------------
 # 7. Save fitted model for the Shiny app
 #
-#    app.R loads the object `bn_fit`.
+#    app.R loads the object:
 #
-#    Only bn_fit is saved in the RData file.
-#    bn_masld_model.RData is NOT committed to this repository.
+#      bn_fit
+#
+#    Only bn_fit is saved in bn_masld_model.RData.
+#
+#    The fitted RData file is not committed to this repository.
 # -----------------------------------------------------------------------------
-
 
 save(
   bn_fit,
@@ -684,26 +915,37 @@ save(
 )
 
 
+# -----------------------------------------------------------------------------
+# 8. Final confirmation
+# -----------------------------------------------------------------------------
+
 cat(
-  "Saved bn_masld_model.RData\n"
+  "\nSaved bn_masld_model.RData\n"
 )
 
 
 cat(
-  "Nodes:",
-  paste(
-    names(bn_fit),
-    collapse = ", "
-  ),
-  "\n"
+  "\nNodes:\n"
+)
+
+
+print(
+  names(
+    bn_fit
+  )
 )
 
 
 cat(
-  "Inter-behavior edges learned:\n"
+  "\nFinal inter-behavior edges:\n"
 )
 
 
 print(
   inter_arcs
+)
+
+
+cat(
+  "\nModel building completed successfully.\n"
 )
