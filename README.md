@@ -1,16 +1,17 @@
 # MASLD Risk Simulator
 
 A Shiny web application that uses a Bayesian network with the do-operator to
-estimate how lifestyle behavior changes could affect an individual's MASLD
-(Metabolic dysfunction-Associated Steatotic Liver Disease) probability.
+estimate model-predicted changes in an individual's MASLD
+(metabolic dysfunction-associated steatotic liver disease) probability under
+hypothetical behavioral modifications.
 
-**Live app:** https://masayasato-masld-behavior-app.share.connect.posit.cloud/
+**Live app:** https://liver-prediction.shinyapps.io/masld_behavior_app/
 
 ## Overview
 
-This app implements causal inference via the do-operator (Pearl 2009) on a
-Bayesian network trained on the JMDC (Japan Medical Data Center) claims
-database (approximately 5.2 million adults):
+This app implements model-based hypothetical simulations using the do-operator
+(Pearl 2009) on a Bayesian network trained on JMDC (Japan Medical Data Center)
+claims and health checkup data (approximately 5.2 million adults):
 
 - **Layer 1:** Demographics (Age, Sex)
 - **Layer 2:** Six lifestyle behaviors from the Japanese Specific Health
@@ -18,13 +19,14 @@ database (approximately 5.2 million adults):
   the data
 - **Layer 3:** MASLD outcome
 
-Interventional probabilities are computed by graph mutilation (removing all
-incoming edges to the intervened variable) followed by exact inference via the
-junction tree algorithm (gRain package).
+Model-predicted probabilities under hypothetical behavioral modifications are
+computed by graph mutilation (removing all incoming edges to the modified
+variable) followed by exact inference via the junction tree algorithm
+(gRain package).
 
 ## Repository contents
 
-- `app.R`: Shiny application (do-operator, single-intervention mode).
+- `app.R`: Shiny application (do-operator, single-behavior simulation mode).
 - `build_bn_model.R`: Bayesian network construction. Builds the three-layer
   DAG, learns data-driven inter-behavior edges (Cramér's V screening
   conditional on age and sex, followed by BIC score-based direction learning),
@@ -55,9 +57,10 @@ fitted model file `bn_masld_model.RData` must be present in the app directory
 
 1. **Step 1:** Set your demographics and answer six lifestyle questions based
    on your current habits.
-2. **Step 2:** View your current MASLD probability and simulate the effect of
-   improving one behavior. Only one behavior can be toggled at a time; turn it
-   off to select another.
+2. **Step 2:** View your current MASLD probability and simulate the
+   model-predicted change associated with hypothetically modifying one
+   behavior. Only one behavior can be toggled at a time; turn it off to select
+   another.
 
 ## Reproducing the model
 
@@ -73,7 +76,7 @@ to permission from JMDC).
 
 ## Data source
 
-Model trained on the JMDC (Japan Medical Data Center) claims database.
+Model trained on JMDC (Japan Medical Data Center) claims and health checkup data.
 Lifestyle questions are based on the Japanese Specific Health Checkup (Tokutei
 Kenshin) questionnaire. Detailed methodology is described in the associated
 publication.
